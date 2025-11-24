@@ -1,0 +1,60 @@
+version: 6
+environments:
+  default:
+    channels:
+    - url: https://conda.anaconda.org/bioconda/
+    - url: https://conda.anaconda.org/conda-forge/
+    packages:
+      linux-64:
+      - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2025.11.12-hbd8a1cb_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/ncbi-datasets-cli-18.9.0-ha770c72_0.conda
+      linux-aarch64:
+      - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2025.11.12-hbd8a1cb_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/ncbi-datasets-cli-18.9.0-h8af1aa0_0.conda
+      osx-64:
+      - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2025.11.12-hbd8a1cb_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/ncbi-datasets-cli-18.9.0-h694c41f_0.conda
+      osx-arm64:
+      - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2025.11.12-hbd8a1cb_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/ncbi-datasets-cli-18.9.0-hce30654_0.conda
+packages:
+- conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2025.11.12-hbd8a1cb_0.conda
+  sha256: b986ba796d42c9d3265602bc038f6f5264095702dd546c14bc684e60c385e773
+  md5: f0991f0f84902f6b6009b4d2350a83aa
+  depends:
+  - __unix
+  license: ISC
+  size: 152432
+  timestamp: 1762967197890
+- conda: https://conda.anaconda.org/conda-forge/linux-64/ncbi-datasets-cli-18.9.0-ha770c72_0.conda
+  sha256: 6f1d37f237ba486b9ad0e9083a2ada4203dd85157caeab0fbb6354b342d83054
+  md5: 8908ac43b539f8035f672650555ebaba
+  depends:
+  - ca-certificates
+  license: Public Domain
+  size: 16897163
+  timestamp: 1759245095608
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/ncbi-datasets-cli-18.9.0-h8af1aa0_0.conda
+  sha256: 8156c8d8a6e5d2b75529c532cb05eba7f68c400cc297f8d5c8fb39004e0b4226
+  md5: 1375e12e95378076d1205fd46f2725c8
+  depends:
+  - ca-certificates
+  license: Public Domain
+  size: 15810089
+  timestamp: 1759245791413
+- conda: https://conda.anaconda.org/conda-forge/osx-64/ncbi-datasets-cli-18.9.0-h694c41f_0.conda
+  sha256: ee0c1558e4bc9edee7a34e5df24248f94e541388bcb543dddbad5007bc0a6286
+  md5: 928b84c0d0beaeb1d7e741fcbcd75184
+  depends:
+  - ca-certificates
+  license: Public Domain
+  size: 33151380
+  timestamp: 1759245251234
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/ncbi-datasets-cli-18.9.0-hce30654_0.conda
+  sha256: a2e3aec64cc4e5247844a77ae8a9c1d9c1c99529470d6a6855e6294c9a852db2
+  md5: 9c5fa3027a6d3f1c3d6583becd41e4db
+  depends:
+  - ca-certificates
+  license: Public Domain
+  size: 33153942
+  timestamp: 1759245212588

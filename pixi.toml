@@ -1,0 +1,12 @@
+[project]
+name = "qualibact-ref-qc"
+version = "0.1.0"
+description = "Environment for the dataset preparation helper"
+channels = ["bioconda", "conda-forge"]
+platforms = ["osx-64", "osx-arm64", "linux-64", "linux-aarch64"]
+
+[dependencies]
+ncbi-datasets-cli = "*"
+
+[tasks]
+prepare-dataset = "python prepare_dataset.py"
