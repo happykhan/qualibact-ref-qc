@@ -26,8 +26,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
+from rich.console import Console
+
 
 DATASETS_CMD = ["pixi", "run", "datasets"]
+console = Console()
 
 
 @dataclass
@@ -45,6 +48,7 @@ def slugify(value: str) -> str:
 
 def run_command(cmd: Sequence[str]) -> None:
     """Run a command and raise a helpful error on failure."""
+    console.log(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
@@ -54,11 +58,14 @@ def run_command(cmd: Sequence[str]) -> None:
 
 
 def check_datasets_cli_available() -> None:
-    if shutil.which(DATASETS_CMD) is None:
+    # run subprocess to check if 'datasets' command is available
+    result = subprocess.run(DATASETS_CMD + ["--version"], capture_output=True, text=True)
+    if result.returncode != 0:
         raise RuntimeError(
             "NCBI Datasets CLI ('datasets') is not available. "
             "Install it with `pixi install` (see pixi.toml) or ensure it is on your PATH."
         )
+    console.log(f"Found NCBI Datasets CLI: {result.stdout.strip() or 'ok'}")
 
 
 def ensure_output_dir(target: Path, force: bool) -> None:
@@ -74,7 +81,7 @@ def ensure_output_dir(target: Path, force: bool) -> None:
 
 
 def download_package(
-    species: str, assembly_levels: Iterable[str], reference_only: bool, tmpdir: Path
+    taxon: str, assembly_levels: Iterable[str], tmpdir: Path
 ) -> Path:
     """
     Use NCBI Datasets CLI to download genomes for a taxon.
@@ -82,22 +89,23 @@ def download_package(
     Returns the path to the unzipped package root.
     """
     zip_path = tmpdir / "ncbi_dataset.zip"
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    
     cmd = [
-        DATASETS_CMD*,
+        *DATASETS_CMD,
         "download",
         "genome",
         "taxon",
-        species,
+        taxon,
         "--include",
         "genome",
         "--filename",
         str(zip_path),
     ]
-    if reference_only:
-        cmd.append("--reference")
     if assembly_levels:
         cmd += ["--assembly-level", ",".join(assembly_levels)]
-    run_command(cmd)
+    with console.status("Downloading assemblies from NCBI..."):
+        run_command(cmd)
 
     extract_root = tmpdir / "package"
     with zipfile.ZipFile(zip_path, "r") as zf:
@@ -168,21 +176,24 @@ def collect_assemblies(package_root: Path, dest_dir: Path) -> List[AssemblyRecor
         if not fasta:
             continue
         sample_id = derive_sample_id(accession, metadata)
-        dest_fasta = dest_dir / f"{accession}.fna"
+        dest_fasta = dest_dir / f"{accession}.fasta"
         records.append(AssemblyRecord(sample_id, fasta, dest_fasta))
+    console.log(f"Found {len(records)} assemblies")
     return records
 
 
 def copy_assemblies(records: Sequence[AssemblyRecord]) -> None:
+    console.log("Copying assemblies to target directory")
     for record in records:
         record.dest_fasta.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(record.source_fasta, record.dest_fasta)
 
 
 def write_samplesheet(records: Sequence[AssemblyRecord], path: Path) -> None:
+    console.log(f"Writing samplesheet to {path}")
     with path.open("w", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["sample_id", "assembly_path"])
+        writer.writerow(["sample_id", "fasta"])
         for record in records:
             writer.writerow([record.sample_id, record.dest_fasta.resolve()])
 
@@ -196,6 +207,10 @@ def parse_args() -> argparse.Namespace:
         help="Species/taxon name (e.g. 'Salmonella enterica').",
     )
     parser.add_argument(
+        "--taxid",
+        help="NCBI TaxID (overrides the species name if provided).",
+    )
+    parser.add_argument(
         "--outdir",
         type=Path,
         default=Path.cwd(),
@@ -203,13 +218,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--assembly-levels",
-        default="complete,chromosome",
+        default="complete",
         help="Comma-separated assembly levels to request (e.g. complete,chromosome,scaffold).",
-    )
-    parser.add_argument(
-        "--include-non-reference",
-        action="store_true",
-        help="Include non-reference assemblies (reference assemblies only by default).",
     )
     parser.add_argument(
         "--force",
@@ -231,16 +241,21 @@ def main() -> None:
     species_dir = args.outdir / species_slug
     assemblies_dir = species_dir / "assemblies"
     samplesheet_path = species_dir / "samplesheet.csv"
+    metadata_json = species_dir / "assembly_data_report.json"
+
+    taxon_query = args.taxid or args.species
+    if args.taxid:
+        console.log(f"Using taxid {args.taxid} for download")
 
     check_datasets_cli_available()
     ensure_output_dir(species_dir, args.force)
+    console.log(f"Preparing output in {species_dir}")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
         package_root = download_package(
-            args.species,
+            taxon_query,
             assembly_levels,
-            reference_only=not args.include_non_reference,
             tmpdir=tmpdir,
         )
         records = collect_assemblies(package_root, assemblies_dir)
@@ -248,9 +263,15 @@ def main() -> None:
             raise RuntimeError("No assemblies found in the downloaded package.")
         copy_assemblies(records)
         write_samplesheet(records, samplesheet_path)
+        report_src = package_root / "ncbi_dataset" / "data" / "assembly_data_report.jsonl"
+        if report_src.exists():
+            # Convert jsonl to a single json array for easier consumption
+            entries = [json.loads(line) for line in report_src.read_text().splitlines() if line.strip()]
+            metadata_json.write_text(json.dumps(entries, indent=2))
+            console.log(f"Saved metadata to: {metadata_json}")
 
-    print(f"Assemblies written to: {assemblies_dir.resolve()}")
-    print(f"Samplesheet written to: {samplesheet_path.resolve()}")
+    console.log(f"Assemblies written to: {assemblies_dir.resolve()}")
+    console.log(f"Samplesheet written to: {samplesheet_path.resolve()}")
 
 
 if __name__ == "__main__":
