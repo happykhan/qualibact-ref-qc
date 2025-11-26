@@ -7,6 +7,12 @@ test_data/
 .nextflow.log*
 # C extensions
 *.so
+singularity/
+analysis
+tmp/ 
+old_analysis/ 
+apptainer-cache/
+.nextflow/
 
 # Distribution / packaging
 .Python

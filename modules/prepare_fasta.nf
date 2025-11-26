@@ -33,9 +33,12 @@ process PREPARE_FASTA {
     echo "[PREPARE_FASTA] inpath=\$inpath"
     echo "[PREPARE_FASTA] outpath=\$outpath"
 
+    # Expose `out` into the shell and ensure tmp is unique
+    out="${out}"
+
     # If input is gzipped -> decompress to tmp then move into place
     if [[ "${fasta}" == *.gz ]]; then
-        tmp="\${out}.tmp"
+        tmp="${out}.tmp"
         echo "[PREPARE_FASTA] detected gz input; writing to \$tmp"
         gzip -cd "${fasta}" > "\$tmp"
         mv -f "\$tmp" "${out}"
@@ -55,7 +58,7 @@ process PREPARE_FASTA {
     fi
 
     # Otherwise copy to tmp then atomically move into place
-    tmp="\${out}.tmp"
+    tmp="${out}.tmp"
     echo "[PREPARE_FASTA] copying ${fasta} -> \$tmp"
     cp -p "${fasta}" "\$tmp"
     mv -f "\$tmp" "${out}"

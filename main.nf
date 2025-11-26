@@ -30,7 +30,6 @@ workflow {
               "Please check the path and permissions."
     }
     log.info "Using samplesheet: ${samplesheetPath.toString()}"
-
     // Build channel from CSV, fail fast if rows missing or sample_id missing
     def assemblies = Channel
         .fromPath(samplesheetPath.toString(), checkIfExists: true)
@@ -50,13 +49,11 @@ workflow {
     if (params.simulate) {
         log.info "Simulating reads with ART and assembling with Shovill"
         SIMULATE_ART(prepared_assemblies)
-        SIMULATE_ART.out
+        def simulated_reads = SIMULATE_ART.out
             .map { meta, r1, r2 -> tuple(meta, r1, r2) }
-            .set { simulated_reads }
         ASSEMBLY_SHOVILL(simulated_reads, params.min_contig_length)
-        ASSEMBLY_SHOVILL.out
+        metrics_input = ASSEMBLY_SHOVILL.out
             .map { meta, fasta -> tuple(meta, fasta) }
-            .set { metrics_input }
     } else {
         log.info "Using provided assemblies for metrics only"
         metrics_input = prepared_assemblies
@@ -93,7 +90,8 @@ workflow {
     def speciesName = file(params.samplesheet).getParent()?.getName() ?: "species"
     def metadataJson = file(params.samplesheet).getParent() ? file(params.samplesheet).getParent().resolve("assembly_data_report.json") : null
 
-    MERGE_METRICS(asm_collected, checkm_collected, base_collected, metadataJson, speciesName, file(params.samplesheet))
+    // MERGE_METRICS(asm_collected, checkm_collected, base_collected, metadataJson, speciesName, file(params.samplesheet))
+    // Need to work on this a bit more. Let's just get the inputs done for now.
 }
 
 /*
