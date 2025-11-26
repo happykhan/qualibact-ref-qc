@@ -1,6 +1,6 @@
 process MERGE_METRICS {
     label 'python_container'
-
+    label 'pixi'
     publishDir "${params.outdir}/metrics_summary", mode: 'copy'
 
     input:

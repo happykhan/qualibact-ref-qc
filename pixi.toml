@@ -13,3 +13,10 @@ art = ">=2016.6.5,<2017"
 
 [tasks]
 prepare-dataset = "python prepare_dataset.py"
+
+[pypi-dependencies]
+requests = ">=2.32.5, <3"
+gdown = ">=5.2.0, <6"
+matplotlib = ">=3.10.7, <4"
+seaborn = ">=0.13.2, <0.14"
+nf-core = ">=3.5.1, <4"

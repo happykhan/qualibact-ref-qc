@@ -13,6 +13,7 @@ include { ASSEMBLY_STATS       } from './modules/assembly_stats'
 include { CONTAMINATION_CHECKM } from './modules/contamination'
 include { BASE_COMPOSITION     } from './modules/base_composition'
 include { MERGE_METRICS        } from './modules/merge_metrics'
+include { PREPARE_FASTA        } from './modules/prepare_fasta'
 
 /*
 ========================================================================================
@@ -21,10 +22,18 @@ include { MERGE_METRICS        } from './modules/merge_metrics'
 */
 
 workflow {
+    // --- validate samplesheet early with a clear error ---
+    def samplesheetPath = file(params.samplesheet ?: '')
+    if (!samplesheetPath || !samplesheetPath.exists()) {
+        error "Samplesheet not found or unreadable: ${params.samplesheet}\n" +
+              "Working dir: ${new File('.').canonicalPath}\n" +
+              "Please check the path and permissions."
+    }
+    log.info "Using samplesheet: ${samplesheetPath.toString()}"
 
-    Channel
-        .fromPath(params.samplesheet)
-        .ifEmpty { error "Samplesheet not found: ${params.samplesheet}" }
+    // Build channel from CSV, fail fast if rows missing or sample_id missing
+    def assemblies = Channel
+        .fromPath(samplesheetPath.toString(), checkIfExists: true)
         .splitCsv(header: true)
         .map { row ->
             def sampleId = (row.sample_id ?: row.sample ?: row.id ?: "").toString().trim()
@@ -34,23 +43,23 @@ workflow {
             def meta = [sample_id: sampleId, type: 'assembly']
             tuple(meta, fastaFile)
         }
-        .set { assemblies }
-
+    assemblies
+        | PREPARE_FASTA
+        | set { prepared_assemblies }
     def metrics_input
-
     if (params.simulate) {
         log.info "Simulating reads with ART and assembling with Shovill"
-        assemblies | SIMULATE_ART | set { simulated_reads }
-        simulated_reads
+        SIMULATE_ART(prepared_assemblies)
+        SIMULATE_ART.out
             .map { meta, r1, r2 -> tuple(meta, r1, r2) }
-            .set { shovill_input }
-        ASSEMBLY_SHOVILL(shovill_input, params.min_contig_length)
+            .set { simulated_reads }
+        ASSEMBLY_SHOVILL(simulated_reads, params.min_contig_length)
         ASSEMBLY_SHOVILL.out
             .map { meta, fasta -> tuple(meta, fasta) }
             .set { metrics_input }
     } else {
         log.info "Using provided assemblies for metrics only"
-        metrics_input = assemblies
+        metrics_input = prepared_assemblies
     }
 
     ASSEMBLY_STATS(metrics_input)

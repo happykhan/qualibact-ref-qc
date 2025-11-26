@@ -1,6 +1,11 @@
 process SIMULATE_ART {
     tag { meta.sample_id }
-    container 'quay.io/biocontainers/art:3.11.14--h2d50403_1'
+
+    def containerImage = 'quay.io/biocontainers/art:3.11.14--h2d50403_1'
+    def resolvedContainer = (workflow.profile ?: '')
+        .tokenize(',')
+        .contains('bmrc') ? "${params.singularity_dir}/${containerImage.replace('/', '_').replace(':', '_')}.sif" : containerImage
+    container resolvedContainer
 
     input:
     tuple val(meta), path(fasta)

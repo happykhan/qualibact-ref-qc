@@ -1,7 +1,12 @@
 process ASSEMBLY_STATS {
     tag { meta.sample_id }
     label 'process_single'
-    container 'quay.io/biocontainers/assembly-stats:1.0.1--h9948957_10'
+
+    def containerImage = 'quay.io/biocontainers/assembly-stats:1.0.1--h9948957_10'
+    def resolvedContainer = (workflow.profile ?: '')
+        .tokenize(',')
+        .contains('bmrc') ? "${params.singularity_dir}/${containerImage.replace('/', '_').replace(':', '_')}.sif" : containerImage
+    container resolvedContainer
 
     publishDir "${params.outdir}/assembly_stats", mode: 'copy', pattern: "*.txt"
 

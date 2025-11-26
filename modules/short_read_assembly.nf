@@ -2,7 +2,12 @@
 process ASSEMBLY_SHOVILL {
     tag { meta.sample_id }
     label 'process_medium'
-    container 'staphb/shovill:1.1.0-2022Dec'
+
+    def containerImage = 'staphb/shovill:1.1.0-2022Dec'
+    def resolvedContainer = (workflow.profile ?: '')
+        .tokenize(',')
+        .contains('bmrc') ? "${params.singularity_dir}/${containerImage.replace('/', '_').replace(':', '_')}.sif" : containerImage
+    container resolvedContainer
  
     errorStrategy 'ignore'
 

@@ -128,7 +128,7 @@ def load_metadata_genome_sizes(path: Path | None) -> List[float]:
         return []
     entries = json.loads(path.read_text())
     sizes = []
-    for e in entries:
+    for e in entries.get('reports', []):
         stats = e.get("assembly_stats") or {}
         size = stats.get("total_sequence_length")
         if size is None:
@@ -203,6 +203,10 @@ def main() -> None:
     gc_vals = [compute_gc(base_comp[sid]) for sid in base_comp]
     gc_vals = [v for v in gc_vals if v is not None]
     cds_vals = to_floats([checkm[sid].get("Total_Coding_Sequences") for sid in checkm])
+    completeness_vals = to_floats([checkm[sid].get("Completeness") for sid in checkm])
+    contamination_vals = to_floats([checkm[sid].get("Contamination") for sid in checkm])
+    contig_counts = to_floats([asm_stats[sid].get("number") for sid in asm_stats])
+    n50_vals = to_floats([asm_stats[sid].get("N50") for sid in asm_stats])
     ref_sizes = load_metadata_genome_sizes(args.metadata_json)
 
     # Summary CSV
@@ -221,39 +225,67 @@ def main() -> None:
         for row in summary_rows:
             writer.writerow(row)
 
-    # Species metrics (ranges)
-    def rounded_range(values: List[float]) -> Tuple[float, float] | None:
-        if not values:
+    # Species metrics summary compatible with tidy summary expectations
+    def species_bounds(values: List[float]) -> Tuple[float, float] | None:
+        vals = [v for v in values if not math.isnan(v)]
+        if not vals:
             return None
-        return (round(min(values), -3), round(max(values), -3))
+        return (min(vals), max(vals))
+
+    def round_species_bounds(metric: str, lower: float, upper: float) -> Tuple[str, str]:
+        if metric == "N50":
+            lower = math.floor(lower / 1000) * 1000
+            return (str(int(lower)), "")
+        if metric == "Completeness":
+            lower = math.floor(lower)
+            return (str(int(lower)), "")
+        if metric == "Contamination":
+            upper = math.ceil(upper)
+            return ("", str(int(upper)))
+        if metric == "Total_Coding_Sequences":
+            lower = math.floor(lower / 100) * 100
+            upper = math.ceil(upper / 100) * 100
+            return (str(int(lower)), str(int(upper)))
+        if metric == "no_of_contigs":
+            upper = math.ceil(upper / 10) * 10
+            return ("", str(int(upper)))
+        if metric == "GC_Content":
+            lower = math.floor(lower * 100)
+            upper = math.ceil(upper * 100)
+            return (str(int(lower)), str(int(upper)))
+        if metric == "Genome_Size":
+            lower = math.floor(lower / 100000) * 100000
+            upper = math.ceil(upper / 100000) * 100000
+            return (str(int(lower)), str(int(upper)))
+        return (str(lower), str(upper))
+
+    metrics_of_interest = {
+        "Genome_Size": genome_sizes_assembly,
+        "GC_Content": gc_vals,
+        "Total_Coding_Sequences": cds_vals,
+        "Completeness": completeness_vals,
+        "Contamination": contamination_vals,
+        "no_of_contigs": contig_counts,
+        "N50": n50_vals,
+    }
 
     species_rows = []
-    if genome_sizes_assembly:
-        gr = rounded_range(genome_sizes_assembly)
-        gcr = rounded_range(gc_vals) if gc_vals else None
+    for metric, values in metrics_of_interest.items():
+        bounds = species_bounds(values)
+        if not bounds:
+            continue
+        lower_txt, upper_txt = round_species_bounds(metric, *bounds)
         species_rows.append(
             {
-                "source": "assemblies",
-                "genome_size_min": gr[0] if gr else "",
-                "genome_size_max": gr[1] if gr else "",
-                "gc_min": gcr[0] if gcr else "",
-                "gc_max": gcr[1] if gcr else "",
-            }
-        )
-    if ref_sizes:
-        gr = rounded_range(ref_sizes)
-        species_rows.append(
-            {
-                "source": "reference",
-                "genome_size_min": gr[0] if gr else "",
-                "genome_size_max": gr[1] if gr else "",
-                "gc_min": "",
-                "gc_max": "",
+                "species": args.species,
+                "metric": metric,
+                "lower_bounds": lower_txt,
+                "upper_bounds": upper_txt,
             }
         )
 
     with (outdir / f"{args.species}_metrics.csv").open("w", newline="") as handle:
-        fieldnames = ["source", "genome_size_min", "genome_size_max", "gc_min", "gc_max"]
+        fieldnames = ["species", "metric", "lower_bounds", "upper_bounds"]
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in species_rows:
@@ -274,52 +306,111 @@ def main() -> None:
     # CDS vs genome size scatter data
     with (outdir / "cds_vs_genome_size.csv").open("w", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["sample_id", "cds_count", "genome_size"])
+        writer.writerow(["sample_id", "cds_count", "genome_size", "completeness"])
         for sid, row in checkm.items():
             try:
                 cds = float(row.get("Total_Coding_Sequences"))
                 gsize = float(row.get("Genome_Size"))
             except (TypeError, ValueError):
                 continue
-            writer.writerow([sid, cds, gsize])
+            comp_val = row.get("Completeness")
+            try:
+                completeness = float(comp_val)
+            except (TypeError, ValueError):
+                completeness = ""
+            writer.writerow([sid, cds, gsize, completeness])
 
     # Optional plots if matplotlib is available
+    sns = None
+    sm = None
     try:
         import matplotlib.pyplot as plt  # type: ignore
     except Exception:
         return
+    try:
+        import seaborn as sns  # type: ignore
+    except Exception:
+        sns = None
+    try:
+        import statsmodels.api as sm  # type: ignore
+    except Exception:
+        sm = None
 
-    if bins:
-        fig, ax = plt.subplots()
-        asm_counts = [b[2] for b in bins]
-        bin_edges = [b[0] for b in bins] + [bins[-1][1]]
-        ax.hist(
-            [genome_sizes_assembly, ref_sizes],
-            bins=bin_edges,
-            label=["assemblies", "reference"],
-            alpha=0.7,
-        )
-        ax.set_xlabel("Genome size")
-        ax.set_ylabel("Count")
-        ax.legend()
-        fig.tight_layout()
-        fig.savefig(outdir / "genome_size_histogram.png", dpi=200)
-        plt.close(fig)
+    if genome_sizes_assembly or ref_sizes:
+        if sns:
+            fig, ax = plt.subplots()
+            if genome_sizes_assembly:
+                sns.histplot(
+                    genome_sizes_assembly,
+                    bins=50,
+                    color="#1f77b4",
+                    stat="density",
+                    kde=True,
+                    alpha=0.6,
+                    label="assemblies",
+                    ax=ax,
+                )
+            if ref_sizes:
+                sns.histplot(
+                    ref_sizes,
+                    bins=50,
+                    color="#d62728",
+                    stat="density",
+                    kde=True,
+                    alpha=0.6,
+                    label="reference",
+                    ax=ax,
+                )
+            ax.set_xlabel("Genome size")
+            ax.set_ylabel("Density")
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(outdir / "genome_size_histogram.png", dpi=200)
+            plt.close(fig)
+        elif bins:
+            fig, ax = plt.subplots()
+            bin_edges = [b[0] for b in bins] + [bins[-1][1]]
+            ax.hist(
+                [genome_sizes_assembly, ref_sizes],
+                bins=bin_edges,
+                label=["assemblies", "reference"],
+                alpha=0.7,
+            )
+            ax.set_xlabel("Genome size")
+            ax.set_ylabel("Count")
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(outdir / "genome_size_histogram.png", dpi=200)
+            plt.close(fig)
+
+        if sm and genome_sizes_assembly and ref_sizes:
+            fig = plt.figure()
+            sm.qqplot_2samples(genome_sizes_assembly, ref_sizes, line="45")
+            plt.title("Q-Q plot: assemblies vs reference genome sizes")
+            plt.xlabel("Assemblies quantiles")
+            plt.ylabel("Reference quantiles")
+            fig.tight_layout()
+            fig.savefig(outdir / "genome_size_qqplot.png", dpi=200)
+            plt.close(fig)
 
     if checkm:
-        xs = []
-        ys = []
+        points = []
         for row in checkm.values():
             try:
-                ys.append(float(row.get("Total_Coding_Sequences")))
-                xs.append(float(row.get("Genome_Size")))
+                gsize = float(row.get("Genome_Size"))
+                cds = float(row.get("Total_Coding_Sequences"))
+                comp = float(row.get("Completeness"))
             except (TypeError, ValueError):
                 continue
-        if xs and ys:
+            points.append((gsize, cds, comp))
+        if points:
+            xs, ys, comps = zip(*points)
             fig, ax = plt.subplots()
-            ax.scatter(xs, ys, alpha=0.6)
+            scatter = ax.scatter(xs, ys, c=comps, cmap="viridis", alpha=0.6)
             ax.set_xlabel("Genome size")
             ax.set_ylabel("Total coding sequences")
+            cbar = fig.colorbar(scatter, ax=ax)
+            cbar.set_label("Completeness (%)")
             fig.tight_layout()
             fig.savefig(outdir / "cds_vs_genome_size.png", dpi=200)
             plt.close(fig)
